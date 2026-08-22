@@ -8,3 +8,5 @@ prisma/dev.db-journal
 *.log
 dist/
 build/
+package-lock.json
+next-env.d.ts
