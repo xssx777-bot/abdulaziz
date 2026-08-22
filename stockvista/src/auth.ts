@@ -27,7 +27,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           email: user.email,
           name: user.name,
           subscriptionTier: user.subscriptionTier,
-          subscriptionExpiry: user.subscriptionExpiry?.toISOString(),
+          subscriptionExpiry: user.subscriptionExpiry?.toISOString() ?? null,
         };
       },
     }),
