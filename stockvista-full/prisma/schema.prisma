@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String   @id @default(cuid())
+  email                String   @unique
+  password             String
+  name                 String?
+  phone                String?
+  avatar               String?
+  subscriptionTier     String   @default("free")
+  subscriptionExpiry   DateTime?
+  language             String   @default("en")
+  theme                String   @default("light")
+  enableNotifications  Boolean  @default(true)
+  preferredBroker      String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  connectedBrokers     ConnectedBroker[]
+  activities           Activity[]
+  watchlists           Watchlist[]
+  preferences          UserPreference?
+  stripeCustomer       StripeCustomer?
+}
+
+model UserPreference {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  riskTolerance     String   @default("medium")
+  defaultChart      String   @default("candlestick")
+  priceAlerts       Boolean  @default(true)
+  newsNotifications Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model ConnectedBroker {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerName        String
+  accountId         String
+  apiKey            String
+  apiSecret         String
+  isActive          Boolean  @default(true)
+  isVerified        Boolean  @default(false)
+  connectedAt       DateTime @default(now())
+  lastSyncAt        DateTime?
+  updatedAt         DateTime @updatedAt
+
+  @@unique([userId, brokerName, accountId])
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  symbol    String?
+  quantity  Float?
+  price     Float?
+  description String?
+  timestamp DateTime @default(now())
+}
+
+model Watchlist {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  symbols   String   @default("")
+  isPublic  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+}
+
+model StripeCustomer {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId        String   @unique
+  subscriptionId    String?
+  status            String   @default("inactive")
+  currentPeriodEnd  DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model WhaleTransaction {
+  id          String   @id @default(cuid())
+  symbol      String
+  quantity    BigInt
+  price       Float
+  transactionType String
+  exchange    String
+  timestamp   DateTime @default(now())
+  description String?
+}
+
+model TadawulStock {
+  id        String   @id @default(cuid())
+  symbol    String   @unique
+  name      String
+  sector    String?
+  price     Float
+  change    Float?
+  changePercent Float?
+  volume    BigInt?
+  marketCap Float?
+  lastUpdate DateTime @default(now())
+}
