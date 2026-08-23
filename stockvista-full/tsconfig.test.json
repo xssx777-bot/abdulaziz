@@ -1,0 +1,10 @@
+{
+  // Next needs "jsx": "preserve" so it can compile JSX itself, but the test
+  // runner transforms these files directly and has to emit real calls. The
+  // automatic runtime is what the components are written against — none of
+  // them import React just to use JSX.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  }
+}
