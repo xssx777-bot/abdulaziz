@@ -62,7 +62,7 @@ export default function OptionsCalculator() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="p-4 bg-white dark:bg-gray-900 rounded-lg">
           <p className="text-gray-600 dark:text-gray-400 text-sm">Price</p>
-          <p className="text-2xl font-bold">${(optionType === 'call' ? result.callPrice : result.putPrice).toFixed(2)}</p>
+          <p className="text-2xl font-bold">${result.price.toFixed(2)}</p>
         </div>
 
         <div className="p-4 bg-white dark:bg-gray-900 rounded-lg">

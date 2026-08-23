@@ -6,6 +6,11 @@ export interface OptionGreeks {
   rho: number;
 }
 
+export interface OptionResult {
+  price: number;
+  greeks: OptionGreeks;
+}
+
 export interface OptionCalculatorInput {
   spotPrice: number;
   strikePrice: number;
@@ -40,13 +45,13 @@ const n = (x: number): number => {
   return Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI);
 };
 
-export const calculateBlackScholesCall = (input: OptionCalculatorInput) => {
+export const calculateBlackScholesCall = (input: OptionCalculatorInput): OptionResult => {
   const { spotPrice: S, strikePrice: K, timeToExpiry: T, riskFreeRate: r, volatility: sigma, dividendYield: q } = input;
 
   const d1 = (Math.log(S / K) + (r - q + sigma * sigma / 2) * T) / (sigma * Math.sqrt(T));
   const d2 = d1 - sigma * Math.sqrt(T);
 
-  const callPrice = S * Math.exp(-q * T) * N(d1) - K * Math.exp(-r * T) * N(d2);
+  const price = S * Math.exp(-q * T) * N(d1) - K * Math.exp(-r * T) * N(d2);
 
   const greeks: OptionGreeks = {
     delta: Math.exp(-q * T) * N(d1),
@@ -56,16 +61,16 @@ export const calculateBlackScholesCall = (input: OptionCalculatorInput) => {
     rho: K * T * Math.exp(-r * T) * N(d2) / 100,
   };
 
-  return { callPrice, greeks };
+  return { price, greeks };
 };
 
-export const calculateBlackScholesPut = (input: OptionCalculatorInput) => {
+export const calculateBlackScholesPut = (input: OptionCalculatorInput): OptionResult => {
   const { spotPrice: S, strikePrice: K, timeToExpiry: T, riskFreeRate: r, volatility: sigma, dividendYield: q } = input;
 
   const d1 = (Math.log(S / K) + (r - q + sigma * sigma / 2) * T) / (sigma * Math.sqrt(T));
   const d2 = d1 - sigma * Math.sqrt(T);
 
-  const putPrice = K * Math.exp(-r * T) * N(-d2) - S * Math.exp(-q * T) * N(-d1);
+  const price = K * Math.exp(-r * T) * N(-d2) - S * Math.exp(-q * T) * N(-d1);
 
   const greeks: OptionGreeks = {
     delta: Math.exp(-q * T) * (N(d1) - 1),
@@ -75,5 +80,5 @@ export const calculateBlackScholesPut = (input: OptionCalculatorInput) => {
     rho: -K * T * Math.exp(-r * T) * N(-d2) / 100,
   };
 
-  return { putPrice, greeks };
+  return { price, greeks };
 };

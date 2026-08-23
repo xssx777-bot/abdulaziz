@@ -15,7 +15,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (!user || !user.password) return null;
       const match = await bcrypt.compare(credentials.password as string, user.password);
       if (!match) return null;
-      return { id: user.id, email: user.email, name: user.name, subscriptionTier: user.subscriptionTier };
+      // Prisma models an absent name as null; NextAuth's User expects undefined.
+      return { id: user.id, email: user.email, name: user.name ?? undefined, subscriptionTier: user.subscriptionTier };
     }
   })],
 });
