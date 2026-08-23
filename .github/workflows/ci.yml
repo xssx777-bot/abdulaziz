@@ -57,3 +57,8 @@ jobs:
 
       - name: Build
         run: npx next build
+
+      # After the build: the end-to-end tests boot `next start` against the
+      # artifact produced above, so they exercise what would actually ship.
+      - name: End-to-end tests
+        run: npm run test:e2e --if-present

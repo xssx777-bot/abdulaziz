@@ -31,7 +31,7 @@ export default function RegisterPage() {
       <form onSubmit={handleSubmit} className="space-y-4 mt-4">
         <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-900" />
         <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-900" required />
-        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-900" required minLength={6} />
+        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-900" required minLength={8} />
         <button type="submit" className="w-full bg-green-600 text-white py-2 rounded font-bold">Register</button>
       </form>
       <p className="text-center mt-4">Already have an account? <Link href={`/${locale}/auth/login`} className="text-blue-600">Login</Link></p>
