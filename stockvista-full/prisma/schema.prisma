@@ -48,8 +48,8 @@ model ConnectedBroker {
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   brokerName        String
   accountId         String
-  apiKey            String   @db.String(500)
-  apiSecret         String   @db.String(500)
+  apiKey            String
+  apiSecret         String
   isActive          Boolean  @default(true)
   isVerified        Boolean  @default(false)
   connectedAt       DateTime @default(now())
