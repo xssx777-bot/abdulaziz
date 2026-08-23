@@ -3,8 +3,8 @@ node_modules
 *.db
 *.db-shm
 *.db-wal
-.env.local
 .env
+.env.local
 dist
 build
 .DS_Store
