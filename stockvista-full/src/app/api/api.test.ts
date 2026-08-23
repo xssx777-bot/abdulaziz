@@ -190,13 +190,6 @@ test('whale transactions come back with the expected shape', async () => {
 });
 
 // The auth-gated routes (/api/user/profile, /api/stripe/create-checkout) are
-// not covered here. They call auth(), which calls Next's headers(), which
-// throws outside a request scope — so invoking the handler directly fails on
-// the harness rather than on the behaviour. Reaching into Next's request
-// async storage to fake that scope would couple these tests to internals that
-// change between releases.
-//
-// Covering them needs a request to a running server. Until that exists, their
-// 401 path is unverified; the page-level equivalent is enforced by middleware
-// and was checked by hand (/en/dashboard 307s to /en/auth/login).
-test.skip('auth-gated routes refuse unauthenticated callers (needs a running server)', () => {});
+// covered in e2e/auth-gates.test.ts, not here: they call auth(), which calls
+// Next's headers(), which needs a real request scope. Those tests go over HTTP
+// to a running server so the scope is genuine.
