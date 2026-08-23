@@ -47,5 +47,10 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      # --if-present: stockvista-simple has no test script yet, and a missing
+      # one should not fail its job.
+      - name: Test
+        run: npm test --if-present
+
       - name: Build
         run: npx next build

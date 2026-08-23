@@ -37,7 +37,9 @@ const N = (x: number): number => {
   const t4 = t3 * t;
   const t5 = t4 * t;
 
-  const y = 1.0 - (((((a5 * t5 + a4 * t4) + a3 * t3) + a2 * t2) + a1 * t) * t) * Math.exp(-x * x);
+  // Abramowitz & Stegun 7.1.26: erf(x) ≈ 1 - (a1·t + a2·t² + a3·t³ + a4·t⁴ + a5·t⁵)·e^(-x²).
+  // Each term already carries its own power of t, so the sum is not multiplied by t again.
+  const y = 1.0 - (a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5) * Math.exp(-x * x);
   return 0.5 * (1.0 + sign * y);
 };
 
