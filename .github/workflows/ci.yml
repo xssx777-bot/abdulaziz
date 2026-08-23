@@ -34,7 +34,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not 20: the test script passes a glob to `node --test`, which
+          # only gained glob support in Node 22. Node 20 is also deprecated on
+          # GitHub-hosted runners.
+          node-version: 22
           cache: npm
           cache-dependency-path: ${{ matrix.app }}/package-lock.json
 

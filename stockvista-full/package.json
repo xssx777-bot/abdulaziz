@@ -9,6 +9,9 @@
     "lint": "next lint",
     "test": "tsx --test \"src/**/*.test.ts\""
   },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@prisma/client": "^5.0.0",
     "axios": "^1.6.0",
