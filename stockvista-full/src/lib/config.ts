@@ -45,9 +45,21 @@ export const ibkrConfig = {
   },
 };
 
+/**
+ * Stripe publishes this format, so checking it is not guesswork: a live or test
+ * secret is `sk_live_`/`sk_test_` followed by a long random string.
+ *
+ * The point is placeholders. A value like `sk_test_your_key_here` copied out of
+ * a template flips the "configured" flag on, and the app then answers 502 on a
+ * real call instead of the honest 503 it would give with no key at all. Failing
+ * this check degrades to "not configured", which is the safe direction.
+ */
+const looksLikeStripeSecret = (value: string | undefined): string | undefined =>
+  value && /^sk_(test|live)_[A-Za-z0-9]{24,}$/.test(value) ? value : undefined;
+
 export const stripeConfig = {
   get secretKey() {
-    return trimmed(process.env.STRIPE_SECRET_KEY);
+    return looksLikeStripeSecret(trimmed(process.env.STRIPE_SECRET_KEY));
   },
   get webhookSecret() {
     return trimmed(process.env.STRIPE_WEBHOOK_SECRET);
