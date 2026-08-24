@@ -53,7 +53,9 @@ The script runs one pass per bar, in a fixed order that keeps state consistent:
 Everything downstream is expressed in **R**, the initial stop distance:
 
 - **Take profit** at `tpR × R` (default 2R).
-- **Break-even** moves the stop to entry + one tick once price reaches `beTrigR × R`.
+- **Break-even** moves the stop to `beOffTicks` past entry once price reaches
+  `beTrigR × R`. The offset defaults to 2 ticks so break-even is actually break-even
+  after commission and slippage, not a small loss.
 - **Trailing stop** activates at `trailStartR × R` and then follows at
   `trailMult × ATR` behind the close. Monotonic by construction — `math.max` for
   longs, `math.min` for shorts — so it can only ever tighten.
@@ -69,8 +71,12 @@ qty = (equity × riskPct%) / (stopDistance × pointvalue)
 ```
 
 capped at `maxLev × equity / close` so a very tight stop can't demand more
-capital than the account has. Switch the mode to `إعدادات المنصة` to hand sizing
-back to the Strategy Properties tab instead.
+capital than the account has. `qtyStep` rounds the result down to a tradable
+increment (`1` for shares), and `minQty` cancels the signal outright when the
+result falls below what the instrument can trade — otherwise the order would be
+silently rounded to zero and the trade would vanish with no trace in the report.
+Switch the mode to `إعدادات المنصة` to hand sizing back to the Strategy
+Properties tab instead.
 
 ### Backtest window (④) and display (⑤)
 
@@ -103,8 +109,48 @@ use `{{strategy.order.alert_message}}` as the message body.
 4. Tune the inputs in the strategy settings and read the results in the
    **Strategy Tester** panel.
 
+## Verification
+
+`verify/simulate.py` re-implements the same state machine and risk arithmetic in
+plain Python and runs it over synthetic price data, asserting the properties the
+Pine script is supposed to guarantee:
+
+1. A stop never moves against an open position.
+2. Every bar of an open position is covered by a resting stop.
+3. A stop-out never costs more than its risk budget.
+4. The take profit sits exactly `tpR × R` from entry.
+5. Size stays inside the leverage cap and above the minimum tradable quantity.
+6. Every order level lands on the mintick grid.
+7. One position at a time — no pyramiding.
+
+```
+$ python3 pine/verify/simulate.py
+invariants held across 75 runs (15 configurations x 5 seeds x 4000 bars)
+
+  entries              1203
+  closed at stop       275
+  closed at target     132
+  closed by reversal   106
+  skipped (qty guard)  667
+  unprotected bars     0
+  worst stop-out       102.9% of its risk budget
+```
+
+The worst stop-out exceeding 100% of budget is expected and correct: the budget
+is measured at the stop price, and the fill lands two ticks beyond it.
+
+**What this does and does not prove.** It exercises the logic — the ordering of
+reset/latch/manage/protect/signal, the R arithmetic, the sizing formula, the
+monotonicity of the trailing stop — across fifteen configurations and five
+random seeds. It is not a Pine interpreter and says nothing about Pine syntax,
+`ta.*` semantics, or TradingView's broker emulator. The harness was checked
+against a deliberately broken trailing stop and caught the violation, so the
+assertions are not vacuous.
+
 ### Caveats
 
+- The script has not been compiled in TradingView — paste it into the Pine
+  Editor to confirm before relying on it.
 - Defaults are a starting point, not a tuned configuration. Optimize on one
   period and verify on another; the date-range input exists for exactly that.
 - The equity cap on position size assumes a spot/CFD-style instrument where

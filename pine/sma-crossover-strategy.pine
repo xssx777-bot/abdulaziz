@@ -86,6 +86,8 @@ useTP       = input.bool(true, "هدف الربح", group = G_RSK, inline = "tp"
 tpR         = input.float(2.0, "× المخاطرة (R)", minval = 0.1, step = 0.1, group = G_RSK, inline = "tp")
 useBE       = input.bool(true, "نقل الوقف للتعادل", group = G_RSK, inline = "be")
 beTrigR     = input.float(1.0, "عند (R)", minval = 0.1, step = 0.1, group = G_RSK, inline = "be")
+beOffTicks  = input.int(2, "هامش (تِك)", minval = 0, group = G_RSK, inline = "be",
+     tooltip = "يُوضع الوقف فوق سعر الدخول بهذا العدد من التِكات ليغطي العمولة والانزلاق، فيكون التعادل تعادلًا حقيقيًا لا خسارة صغيرة.")
 useTrail    = input.bool(false, "وقف متحرك", group = G_RSK, inline = "tr")
 trailStartR = input.float(1.0, "يبدأ عند (R)", minval = 0.0, step = 0.1, group = G_RSK, inline = "tr")
 trailMult   = input.float(2.0, "مسافة التتبع (× ATR)", minval = 0.1, step = 0.1, group = G_RSK)
@@ -93,6 +95,10 @@ riskMode    = input.string(Q_RISK, "حجم المركز", options = [Q_RISK, "إ
 riskPct     = input.float(1.0, "المخاطرة لكل صفقة (%)", minval = 0.01, maxval = 100.0, step = 0.1, group = G_RSK)
 maxLev      = input.float(1.0, "أقصى رافعة", minval = 0.1, step = 0.1, group = G_RSK,
      tooltip = "سقف لحجم المركز حتى لا يتجاوز رأس المال المتاح عندما يكون الوقف ضيقًا جدًا.")
+qtyStep     = input.float(0.0, "وحدة الكمية", minval = 0.0, step = 0.001, group = G_RSK,
+     tooltip = "تُقرَّب الكمية لأسفل إلى مضاعف هذه الوحدة (1 للأسهم مثلًا). صفر = بلا تقريب.")
+minQty      = input.float(0.0, "أدنى كمية مقبولة", minval = 0.0, step = 0.001, group = G_RSK,
+     tooltip = "إذا نزلت الكمية المحسوبة تحت هذا الحد تُلغى الإشارة بدل تنفيذها بحجم مُقرَّب إلى صفر.")
 
 // ───────────────────────────────────────────────────────────────────────────
 //  ④ نطاق الاختبار
@@ -160,19 +166,24 @@ shortStopEst = math.round_to_mintick(shortStopRaw)
 longRiskEst  = close - longStopEst
 shortRiskEst = shortStopEst - close
 
-canLong  = inWindow and gapOk and adxOk and longRiskEst  > 0 and tradeDir != D_SHORT and (not useTrend or srcInput > trendMA) and (not isShort or allowRev)
-canShort = inWindow and gapOk and adxOk and shortRiskEst > 0 and tradeDir != D_LONG  and (not useTrend or srcInput < trendMA) and (not isLong  or allowRev)
-
 // حجم المركز من المخاطرة: الخسارة عند الوقف ≈ نسبة ثابتة من رأس المال
 riskCash = strategy.equity * riskPct / 100.0
 sizeFor(riskPerUnit) =>
-    raw = riskPerUnit > 0 ? riskCash / (riskPerUnit * syminfo.pointvalue) : na
-    cap = maxLev * strategy.equity / close
-    na(raw) ? na : math.min(raw, cap)
+    raw     = riskPerUnit > 0 ? riskCash / (riskPerUnit * syminfo.pointvalue) : na
+    cap     = maxLev * strategy.equity / close
+    capped  = na(raw) ? na : math.min(raw, cap)
+    qtyStep > 0 and not na(capped) ? math.floor(capped / qtyStep) * qtyStep : capped
 
 useRiskSizing = riskMode == Q_RISK
 qtyLong  = useRiskSizing ? sizeFor(longRiskEst)  : na
 qtyShort = useRiskSizing ? sizeFor(shortRiskEst) : na
+
+// كمية قابلة للتنفيذ فعلًا — وإلا تُلغى الإشارة بدل تمريرها بحجم يُقرَّب إلى صفر
+qtyLongOk  = not useRiskSizing or (not na(qtyLong)  and qtyLong  > 0 and qtyLong  >= minQty)
+qtyShortOk = not useRiskSizing or (not na(qtyShort) and qtyShort > 0 and qtyShort >= minQty)
+
+canLong  = inWindow and gapOk and adxOk and longRiskEst  > 0 and qtyLongOk  and tradeDir != D_SHORT and (not useTrend or srcInput > trendMA) and (not isShort or allowRev)
+canShort = inWindow and gapOk and adxOk and shortRiskEst > 0 and qtyShortOk and tradeDir != D_LONG  and (not useTrend or srcInput < trendMA) and (not isLong  or allowRev)
 
 // ───────────────────────────────────────────────────────────────────────────
 //  حالة الصفقة المفتوحة
@@ -212,13 +223,13 @@ if newShort
 // 3) تحديث الوقف: التعادل ثم التتبع — لا يتحرك الوقف إلا لصالح الصفقة
 if isLong and not na(entryPx)
     if useBE and high >= entryPx + beTrigR * riskUnit
-        stopLevel := math.max(stopLevel, math.round_to_mintick(entryPx + syminfo.mintick))
+        stopLevel := math.max(stopLevel, math.round_to_mintick(entryPx + beOffTicks * syminfo.mintick))
     if useTrail and high >= entryPx + trailStartR * riskUnit
         stopLevel := math.max(stopLevel, math.round_to_mintick(close - atrVal * trailMult))
 
 if isShort and not na(entryPx)
     if useBE and low <= entryPx - beTrigR * riskUnit
-        stopLevel := math.min(stopLevel, math.round_to_mintick(entryPx - syminfo.mintick))
+        stopLevel := math.min(stopLevel, math.round_to_mintick(entryPx - beOffTicks * syminfo.mintick))
     if useTrail and low <= entryPx - trailStartR * riskUnit
         stopLevel := math.min(stopLevel, math.round_to_mintick(close + atrVal * trailMult))
 
