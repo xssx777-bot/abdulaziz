@@ -2,25 +2,286 @@
 // © xssx777
 
 //@version=6
-strategy("استراتيجيتي", overlay=true, fill_orders_on_standard_ohlc = true)
 
-stopLossPerc = input.float(2.0, title="وقف الخسارة (%)", minval=0.0, step=0.1) / 100
+// ═══════════════════════════════════════════════════════════════════════════
+//  استراتيجيتي — MA Crossover Pro
+//  تقاطع متوسطين متحركين، مُقيَّد بفلاتر اتجاه وزخم، مع إدارة مخاطر كاملة:
+//  وقف خسارة، هدف ربح بمضاعف المخاطرة، نقل الوقف للتعادل، وقف متحرك،
+//  وحجم مركز محسوب من نسبة المخاطرة لكل صفقة.
+// ═══════════════════════════════════════════════════════════════════════════
 
-longCondition = ta.crossover(ta.sma(close, 14), ta.sma(close, 28))
-if (longCondition)
-    strategy.entry("My Long Entry Id", strategy.long)
+strategy(
+     title                        = "استراتيجيتي",
+     shorttitle                   = "MA X-Over Pro",
+     overlay                      = true,
+     fill_orders_on_standard_ohlc = true,
+     process_orders_on_close      = true,
+     calc_on_every_tick           = false,
+     pyramiding                   = 0,
+     initial_capital              = 10000,
+     default_qty_type             = strategy.percent_of_equity,
+     default_qty_value            = 100,
+     commission_type              = strategy.commission.percent,
+     commission_value             = 0.05,
+     slippage                     = 2)
 
-shortCondition = ta.crossunder(ta.sma(close, 14), ta.sma(close, 28))
-if (shortCondition)
-    strategy.entry("My Short Entry Id", strategy.short)
+// ───────────────────────────────────────────────────────────────────────────
+//  ثوابت
+// ───────────────────────────────────────────────────────────────────────────
+LONG_ID  = "Long"
+SHORT_ID = "Short"
+EXIT_L   = "Exit L"
+EXIT_S   = "Exit S"
 
-longStop = strategy.position_avg_price * (1 - stopLossPerc)
-shortStop = strategy.position_avg_price * (1 + stopLossPerc)
+G_SIG = "① الإشارة"
+G_FLT = "② الفلاتر"
+G_RSK = "③ إدارة المخاطر"
+G_SES = "④ نطاق الاختبار"
+G_VIS = "⑤ العرض"
 
-if (stopLossPerc > 0)
-    if (strategy.position_size > 0)
-        strategy.exit("Long SL", from_entry = "My Long Entry Id", stop = longStop)
-    else if (strategy.position_size < 0)
-        strategy.exit("Short SL", from_entry = "My Short Entry Id", stop = shortStop)
+M_PERC  = "نسبة مئوية"
+M_ATR   = "ATR"
+M_SWING = "قمة/قاع سعري"
 
-plot(stopLossPerc > 0 and strategy.position_size > 0 ? longStop : stopLossPerc > 0 and strategy.position_size < 0 ? shortStop : na, title="Stop Loss", color=color.red, style=plot.style_linebr)
+D_BOTH  = "الاتجاهين"
+D_LONG  = "شراء فقط"
+D_SHORT = "بيع فقط"
+
+Q_RISK  = "نسبة من رأس المال"
+
+// ───────────────────────────────────────────────────────────────────────────
+//  ① الإشارة
+// ───────────────────────────────────────────────────────────────────────────
+maType   = input.string("SMA", "نوع المتوسط", options = ["SMA", "EMA", "WMA", "RMA", "HMA", "VWMA"], group = G_SIG)
+srcInput = input.source(close, "مصدر السعر", group = G_SIG)
+fastLen  = input.int(14, "المتوسط السريع", minval = 1, group = G_SIG, inline = "len")
+slowLen  = input.int(28, "البطيء", minval = 2, group = G_SIG, inline = "len")
+useGap   = input.bool(true, "تجاهل التقاطعات الضعيفة", group = G_SIG,
+     tooltip = "يرفض التقاطع إذا كانت المسافة بين المتوسطين أصغر من نسبة من ATR، لتقليل إشارات التذبذب الجانبي.")
+gapMult  = input.float(0.05, "أدنى فجوة بين المتوسطين (× ATR)", minval = 0.0, step = 0.01, group = G_SIG)
+
+// ───────────────────────────────────────────────────────────────────────────
+//  ② الفلاتر
+// ───────────────────────────────────────────────────────────────────────────
+tradeDir  = input.string(D_BOTH, "اتجاه التداول", options = [D_BOTH, D_LONG, D_SHORT], group = G_FLT)
+useTrend  = input.bool(true, "فلتر الاتجاه العام", group = G_FLT,
+     tooltip = "لا يُسمح بالشراء إلا فوق متوسط الاتجاه، ولا بالبيع إلا تحته.")
+trendLen  = input.int(200, "طول متوسط الاتجاه", minval = 1, group = G_FLT)
+useAdx    = input.bool(false, "فلتر قوة الاتجاه (ADX)", group = G_FLT)
+adxLen    = input.int(14, "طول DI", minval = 1, group = G_FLT, inline = "adx")
+adxSmooth = input.int(14, "تنعيم", minval = 1, group = G_FLT, inline = "adx")
+adxMin    = input.float(20.0, "أدنى قيمة لـ ADX", minval = 0.0, step = 1.0, group = G_FLT)
+allowRev  = input.bool(true, "عكس المركز مباشرة عند الإشارة المعاكسة", group = G_FLT,
+     tooltip = "عند التعطيل، الإشارة المعاكسة تُغلق المركز فقط بدل قلبه.")
+
+// ───────────────────────────────────────────────────────────────────────────
+//  ③ إدارة المخاطر
+// ───────────────────────────────────────────────────────────────────────────
+stopMode    = input.string(M_ATR, "أساس وقف الخسارة", options = [M_PERC, M_ATR, M_SWING], group = G_RSK)
+stopPerc    = input.float(2.0, "الوقف (%)", minval = 0.1, step = 0.1, group = G_RSK)
+atrLen      = input.int(14, "طول ATR", minval = 1, group = G_RSK, inline = "atr")
+atrMult     = input.float(2.0, "× ATR", minval = 0.1, step = 0.1, group = G_RSK, inline = "atr")
+swingLen    = input.int(10, "شموع القمة/القاع", minval = 1, group = G_RSK)
+useTP       = input.bool(true, "هدف الربح", group = G_RSK, inline = "tp")
+tpR         = input.float(2.0, "× المخاطرة (R)", minval = 0.1, step = 0.1, group = G_RSK, inline = "tp")
+useBE       = input.bool(true, "نقل الوقف للتعادل", group = G_RSK, inline = "be")
+beTrigR     = input.float(1.0, "عند (R)", minval = 0.1, step = 0.1, group = G_RSK, inline = "be")
+useTrail    = input.bool(false, "وقف متحرك", group = G_RSK, inline = "tr")
+trailStartR = input.float(1.0, "يبدأ عند (R)", minval = 0.0, step = 0.1, group = G_RSK, inline = "tr")
+trailMult   = input.float(2.0, "مسافة التتبع (× ATR)", minval = 0.1, step = 0.1, group = G_RSK)
+riskMode    = input.string(Q_RISK, "حجم المركز", options = [Q_RISK, "إعدادات المنصة"], group = G_RSK)
+riskPct     = input.float(1.0, "المخاطرة لكل صفقة (%)", minval = 0.01, maxval = 100.0, step = 0.1, group = G_RSK)
+maxLev      = input.float(1.0, "أقصى رافعة", minval = 0.1, step = 0.1, group = G_RSK,
+     tooltip = "سقف لحجم المركز حتى لا يتجاوز رأس المال المتاح عندما يكون الوقف ضيقًا جدًا.")
+
+// ───────────────────────────────────────────────────────────────────────────
+//  ④ نطاق الاختبار
+// ───────────────────────────────────────────────────────────────────────────
+useDates  = input.bool(false, "تحديد فترة الاختبار", group = G_SES)
+startTime = input.time(timestamp("01 Jan 2020 00:00 +0000"), "من", group = G_SES)
+endTime   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "إلى", group = G_SES)
+
+// ───────────────────────────────────────────────────────────────────────────
+//  ⑤ العرض
+// ───────────────────────────────────────────────────────────────────────────
+showMAs    = input.bool(true, "المتوسطات", group = G_VIS)
+showLevels = input.bool(true, "مستويات الوقف والهدف", group = G_VIS)
+showPanel  = input.bool(true, "لوحة المعلومات", group = G_VIS)
+
+// ───────────────────────────────────────────────────────────────────────────
+//  الحسابات
+// ───────────────────────────────────────────────────────────────────────────
+maSelect(src, len, kind) =>
+    switch kind
+        "SMA"  => ta.sma(src, len)
+        "EMA"  => ta.ema(src, len)
+        "WMA"  => ta.wma(src, len)
+        "RMA"  => ta.rma(src, len)
+        "HMA"  => ta.hma(src, len)
+        "VWMA" => ta.vwma(src, len)
+        => ta.sma(src, len)
+
+fastMA  = maSelect(srcInput, fastLen, maType)
+slowMA  = maSelect(srcInput, slowLen, maType)
+trendMA = maSelect(srcInput, trendLen, maType)
+atrVal  = ta.atr(atrLen)
+[_diPlus, _diMinus, adxVal] = ta.dmi(adxLen, adxSmooth)
+
+rawLong  = ta.crossover(fastMA, slowMA)
+rawShort = ta.crossunder(fastMA, slowMA)
+
+// ───────────────────────────────────────────────────────────────────────────
+//  بوابات الدخول
+// ───────────────────────────────────────────────────────────────────────────
+posSize = strategy.position_size
+isLong  = posSize > 0
+isShort = posSize < 0
+isFlat  = posSize == 0
+
+inWindow = not useDates or (time >= startTime and time <= endTime)
+gapOk    = not useGap or math.abs(fastMA - slowMA) >= atrVal * gapMult
+adxOk    = not useAdx or adxVal >= adxMin
+
+swingLow  = ta.lowest(low, swingLen)
+swingHigh = ta.highest(high, swingLen)
+
+longStopRaw = switch stopMode
+    M_PERC => close * (1.0 - stopPerc / 100.0)
+    M_ATR  => close - atrVal * atrMult
+    => math.min(swingLow, close - syminfo.mintick)
+
+shortStopRaw = switch stopMode
+    M_PERC => close * (1.0 + stopPerc / 100.0)
+    M_ATR  => close + atrVal * atrMult
+    => math.max(swingHigh, close + syminfo.mintick)
+
+longStopEst  = math.round_to_mintick(longStopRaw)
+shortStopEst = math.round_to_mintick(shortStopRaw)
+longRiskEst  = close - longStopEst
+shortRiskEst = shortStopEst - close
+
+canLong  = inWindow and gapOk and adxOk and longRiskEst  > 0 and tradeDir != D_SHORT and (not useTrend or srcInput > trendMA) and (not isShort or allowRev)
+canShort = inWindow and gapOk and adxOk and shortRiskEst > 0 and tradeDir != D_LONG  and (not useTrend or srcInput < trendMA) and (not isLong  or allowRev)
+
+// حجم المركز من المخاطرة: الخسارة عند الوقف ≈ نسبة ثابتة من رأس المال
+riskCash = strategy.equity * riskPct / 100.0
+sizeFor(riskPerUnit) =>
+    raw = riskPerUnit > 0 ? riskCash / (riskPerUnit * syminfo.pointvalue) : na
+    cap = maxLev * strategy.equity / close
+    na(raw) ? na : math.min(raw, cap)
+
+useRiskSizing = riskMode == Q_RISK
+qtyLong  = useRiskSizing ? sizeFor(longRiskEst)  : na
+qtyShort = useRiskSizing ? sizeFor(shortRiskEst) : na
+
+// ───────────────────────────────────────────────────────────────────────────
+//  حالة الصفقة المفتوحة
+// ───────────────────────────────────────────────────────────────────────────
+var float plannedStop = na
+var float plannedTP   = na
+var float entryPx     = na
+var float stopLevel   = na
+var float tpLevel     = na
+var float riskUnit    = na
+
+// 1) تصفير الحالة أثناء الخروج من السوق (قبل أي إشارة جديدة في هذه الشمعة)
+if isFlat
+    plannedStop := na
+    plannedTP   := na
+    entryPx     := na
+    stopLevel   := na
+    tpLevel     := na
+    riskUnit    := na
+
+// 2) تثبيت المستويات على أول شمعة بعد فتح المركز
+newLong  = isLong  and nz(posSize[1]) <= 0
+newShort = isShort and nz(posSize[1]) >= 0
+
+if newLong
+    entryPx   := strategy.position_avg_price
+    stopLevel := nz(plannedStop, math.round_to_mintick(entryPx - atrVal * atrMult))
+    riskUnit  := math.max(entryPx - stopLevel, syminfo.mintick)
+    tpLevel   := useTP ? math.round_to_mintick(entryPx + tpR * riskUnit) : na
+
+if newShort
+    entryPx   := strategy.position_avg_price
+    stopLevel := nz(plannedStop, math.round_to_mintick(entryPx + atrVal * atrMult))
+    riskUnit  := math.max(stopLevel - entryPx, syminfo.mintick)
+    tpLevel   := useTP ? math.round_to_mintick(entryPx - tpR * riskUnit) : na
+
+// 3) تحديث الوقف: التعادل ثم التتبع — لا يتحرك الوقف إلا لصالح الصفقة
+if isLong and not na(entryPx)
+    if useBE and high >= entryPx + beTrigR * riskUnit
+        stopLevel := math.max(stopLevel, math.round_to_mintick(entryPx + syminfo.mintick))
+    if useTrail and high >= entryPx + trailStartR * riskUnit
+        stopLevel := math.max(stopLevel, math.round_to_mintick(close - atrVal * trailMult))
+
+if isShort and not na(entryPx)
+    if useBE and low <= entryPx - beTrigR * riskUnit
+        stopLevel := math.min(stopLevel, math.round_to_mintick(entryPx - syminfo.mintick))
+    if useTrail and low <= entryPx - trailStartR * riskUnit
+        stopLevel := math.min(stopLevel, math.round_to_mintick(close + atrVal * trailMult))
+
+// 4) إعادة إرسال أوامر الحماية كل شمعة (نفس المعرّف = تحديث للأمر القائم)
+if isLong and not na(stopLevel)
+    strategy.exit(EXIT_L, from_entry = LONG_ID, stop = stopLevel, limit = tpLevel,
+         comment_loss = "وقف شراء", comment_profit = "هدف شراء", alert_message = "EXIT LONG")
+
+if isShort and not na(stopLevel)
+    strategy.exit(EXIT_S, from_entry = SHORT_ID, stop = stopLevel, limit = tpLevel,
+         comment_loss = "وقف بيع", comment_profit = "هدف بيع", alert_message = "EXIT SHORT")
+
+// ───────────────────────────────────────────────────────────────────────────
+//  الدخول والخروج بالتقاطع
+// ───────────────────────────────────────────────────────────────────────────
+if rawLong and canLong
+    plannedStop := longStopEst
+    plannedTP   := useTP ? math.round_to_mintick(close + tpR * longRiskEst) : na
+    strategy.entry(LONG_ID, strategy.long, qty = qtyLong, comment = "دخول شراء", alert_message = "LONG")
+    strategy.exit(EXIT_L, from_entry = LONG_ID, stop = plannedStop, limit = plannedTP,
+         comment_loss = "وقف شراء", comment_profit = "هدف شراء", alert_message = "EXIT LONG")
+else if rawLong and isShort
+    strategy.close(SHORT_ID, comment = "إغلاق بالتقاطع", alert_message = "CLOSE SHORT")
+
+if rawShort and canShort
+    plannedStop := shortStopEst
+    plannedTP   := useTP ? math.round_to_mintick(close - tpR * shortRiskEst) : na
+    strategy.entry(SHORT_ID, strategy.short, qty = qtyShort, comment = "دخول بيع", alert_message = "SHORT")
+    strategy.exit(EXIT_S, from_entry = SHORT_ID, stop = plannedStop, limit = plannedTP,
+         comment_loss = "وقف بيع", comment_profit = "هدف بيع", alert_message = "EXIT SHORT")
+else if rawShort and isLong
+    strategy.close(LONG_ID, comment = "إغلاق بالتقاطع", alert_message = "CLOSE LONG")
+
+// إغلاق كل المراكز عند انتهاء فترة الاختبار المحددة
+if useDates and not inWindow and not isFlat
+    strategy.close_all(comment = "خارج فترة الاختبار")
+
+// ───────────────────────────────────────────────────────────────────────────
+//  العرض
+// ───────────────────────────────────────────────────────────────────────────
+pFast = plot(showMAs ? fastMA : na, "المتوسط السريع", color.new(color.teal, 0), 2)
+pSlow = plot(showMAs ? slowMA : na, "المتوسط البطيء", color.new(color.orange, 0), 2)
+fill(pFast, pSlow, color = fastMA > slowMA ? color.new(color.teal, 88) : color.new(color.orange, 88))
+plot(showMAs and useTrend ? trendMA : na, "متوسط الاتجاه", color.new(color.gray, 20), 1)
+plot(showLevels and not isFlat ? stopLevel : na, "وقف الخسارة", color.new(color.red, 0), 1, plot.style_linebr)
+plot(showLevels and not isFlat and useTP ? tpLevel : na, "هدف الربح", color.new(color.green, 0), 1, plot.style_linebr)
+
+fmtPx(v) => na(v) ? "—" : str.tostring(v, format.mintick)
+
+var table panel = table.new(position.top_right, 2, 6, border_width = 1)
+if showPanel and barstate.islast
+    txtCol = chart.fg_color
+    table.cell(panel, 0, 0, "الحالة",       text_color = txtCol, text_size = size.small)
+    table.cell(panel, 1, 0, isLong ? "شراء" : isShort ? "بيع" : "خارج السوق",
+         text_color = isLong ? color.teal : isShort ? color.orange : txtCol, text_size = size.small)
+    table.cell(panel, 0, 1, "سعر الدخول",   text_color = txtCol, text_size = size.small)
+    table.cell(panel, 1, 1, fmtPx(entryPx), text_color = txtCol, text_size = size.small)
+    table.cell(panel, 0, 2, "وقف الخسارة",  text_color = txtCol, text_size = size.small)
+    table.cell(panel, 1, 2, fmtPx(stopLevel), text_color = color.red, text_size = size.small)
+    table.cell(panel, 0, 3, "هدف الربح",    text_color = txtCol, text_size = size.small)
+    table.cell(panel, 1, 3, useTP ? fmtPx(tpLevel) : "—", text_color = color.green, text_size = size.small)
+    table.cell(panel, 0, 4, "حجم المركز",   text_color = txtCol, text_size = size.small)
+    table.cell(panel, 1, 4, isFlat ? "—" : str.tostring(math.abs(posSize), "#.####"), text_color = txtCol, text_size = size.small)
+    table.cell(panel, 0, 5, "صافي الربح",   text_color = txtCol, text_size = size.small)
+    table.cell(panel, 1, 5, str.tostring(strategy.netprofit, format.mintick),
+         text_color = strategy.netprofit >= 0 ? color.green : color.red, text_size = size.small)
