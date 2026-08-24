@@ -4,6 +4,8 @@
 //@version=6
 strategy("استراتيجيتي", overlay=true, fill_orders_on_standard_ohlc = true)
 
+stopLossPerc = input.float(2.0, title="وقف الخسارة (%)", minval=0.0, step=0.1) / 100
+
 longCondition = ta.crossover(ta.sma(close, 14), ta.sma(close, 28))
 if (longCondition)
     strategy.entry("My Long Entry Id", strategy.long)
@@ -11,3 +13,14 @@ if (longCondition)
 shortCondition = ta.crossunder(ta.sma(close, 14), ta.sma(close, 28))
 if (shortCondition)
     strategy.entry("My Short Entry Id", strategy.short)
+
+longStop = strategy.position_avg_price * (1 - stopLossPerc)
+shortStop = strategy.position_avg_price * (1 + stopLossPerc)
+
+if (stopLossPerc > 0)
+    if (strategy.position_size > 0)
+        strategy.exit("Long SL", from_entry = "My Long Entry Id", stop = longStop)
+    else if (strategy.position_size < 0)
+        strategy.exit("Short SL", from_entry = "My Short Entry Id", stop = shortStop)
+
+plot(stopLossPerc > 0 and strategy.position_size > 0 ? longStop : stopLossPerc > 0 and strategy.position_size < 0 ? shortStop : na, title="Stop Loss", color=color.red, style=plot.style_linebr)
